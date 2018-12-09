@@ -19,6 +19,10 @@ try:
 except:
     from urllib.parse import quote  # python 3.x
 
+blank_html = """
+
+"""
+
 def base_uri(relative_path=''):
     """ Get absolute path to resource, works for dev and for PyInstaller """
     try:
@@ -26,7 +30,7 @@ def base_uri(relative_path=''):
         base_path = sys._MEIPASS
     except Exception:
         if 'pytest' in sys.modules:
-            path = os.path.realpath(sys.argv[1])
+            path = os.path.realpath(sys.argv[0] if len(sys.argv) == 1 else sys.argv[1])
             base_path = path if os.path.isdir(path) else os.path.dirname(path)
         else:
             base_path = os.path.dirname(os.path.realpath(sys.argv[0]))

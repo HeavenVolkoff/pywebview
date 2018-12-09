@@ -33,9 +33,11 @@ from .js.css import disable_text_select
 
 from webview.localization import localization
 from webview.win32_shared import set_ie_mode
+from webview.util import blank_html
 
 clr.AddReference(interop_dll_path())
 from WebBrowserInterop import IWebBrowserInterop, WebBrowserEx
+
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +45,7 @@ is_cef = config.gui == 'cef'
 
 if is_cef:
     from . import cef as CEF
-    from cefpython3 import cefpython as cef
+
 
 class BrowserView:
     instances = {}
@@ -88,18 +90,24 @@ class BrowserView:
             self.load_event = Event()
             self.background_color = background_color
             self.url = url
-            
+
+            self.js_bridge = BrowserView.JSBridge()
+
             if js_api:
                 self.js_bridge.api = js_api
+                self.js_bridge.parent_uid = self.uid
 
             if is_cef:
-                CEF.create_browser(self.Handle.ToInt32(), url)
+                CEF.create_browser(self.uid, self.Handle.ToInt32(), url, js_api)
             else:
-                self.create_mshtml_browser()
+                self._create_mshtml_browser(url, debug)
 
             self.text_select = text_select
             self.Shown += self.on_shown
             self.FormClosed += self.on_close
+
+            if is_cef:
+                self.Resize += self.on_resize
 
             if confirm_quit:
                 self.FormClosing += self.on_closing
@@ -108,7 +116,7 @@ class BrowserView:
             if fullscreen:
                 self.toggle_fullscreen()
 
-        def _create_mshtml_browser(self):
+        def _create_mshtml_browser(self, url, debug):
             self.web_browser = WebBrowserEx()
             self.web_browser.Dock = WinForms.DockStyle.Fill
             self.web_browser.ScriptErrorsSuppressed = not debug
@@ -120,8 +128,6 @@ class BrowserView:
             self.web_browser.IsWebBrowserContextMenuEnabled = debug
 
             self.js_result_semaphore = Semaphore(0)
-            self.js_bridge = BrowserView.JSBridge()
-            self.js_bridge.parent_uid = uid
             self.web_browser.ObjectForScripting = self.js_bridge
 
             # HACK. Hiding the WebBrowser is needed in order to show a non-default background color. Tweaking the Visible property
@@ -143,7 +149,7 @@ class BrowserView:
             if url:
                 self.web_browser.Navigate(url)
             else:
-                self.web_browser.DocumentText = '<!doctype html><html><head></head><body></body></html>'
+                self.web_browser.DocumentText = blank_html
 
             self.Controls.Add(self.web_browser)    
 
@@ -151,9 +157,13 @@ class BrowserView:
             self.web_browser.Document.InvokeScript('eval', (alert.src,))
 
         def on_shown(self, sender, args):
-            self.webview_ready.set()
+            if not is_cef:
+                self.webview_ready.set()
 
         def on_close(self, sender, args):
+            if is_cef:
+                CEF.close_window(self.uid)
+
             del BrowserView.instances[self.uid]
 
             if len(BrowserView.instances) == 0:
@@ -165,6 +175,9 @@ class BrowserView:
 
             if result == WinForms.DialogResult.Cancel:
                 args.Cancel = True
+
+        def on_resize(self, sender, args):
+            CEF.resize(self.Width, self.Height, self.uid)
 
         def on_preview_keydown(self, sender, args):
             if args.KeyCode == WinForms.Keys.Back:
@@ -264,6 +277,9 @@ def create_window(uid, title, url, width, height, resizable, fullscreen, min_siz
         thread.SetApartmentState(ApartmentState.STA)
         thread.Start()
         thread.Join()
+
+        if is_cef:
+            CEF.shutdown()
     else:
         i = list(BrowserView.instances.values())[0]     # arbitrary instance
         i.Invoke(Func[Type](create))
@@ -274,8 +290,8 @@ def set_title(title, uid):
         window.Text = title
 
     window = BrowserView.instances[uid]
-    if window.web_browser.InvokeRequired:
-        window.web_browser.Invoke(Func[Type](_set_title))
+    if window.InvokeRequired:
+        window.Invoke(Func[Type](_set_title))
     else:
         _set_title()
 
@@ -334,13 +350,16 @@ def create_file_dialog(dialog_type, directory, allow_multiple, save_filename, fi
 
 
 def get_current_url(uid):
-    window = BrowserView.instances[uid]
-
-    if window.url is None:
-        return None
+    if is_cef:
+        return CEF.get_current_url(uid)
     else:
-        window.load_event.wait()
-        return window.web_browser.Url.AbsoluteUri
+        window = BrowserView.instances[uid]
+
+        if window.url is None:
+            return None
+        else:
+            window.load_event.wait()
+            return window.web_browser.Url.AbsoluteUri
 
 
 def load_url(url, uid):
@@ -351,7 +370,9 @@ def load_url(url, uid):
     window = BrowserView.instances[uid]
     window.load_event.clear()
 
-    if window.web_browser.InvokeRequired:
+    if is_cef:
+        CEF.load_url(url, uid)
+    elif window.web_browser.InvokeRequired:
         window.web_browser.Invoke(Func[Type](_load_url))
     else:
         _load_url()
@@ -361,11 +382,15 @@ def load_html(content, base_uri, uid):
     def _load_html():
         window.web_browser.DocumentText = inject_base_uri(content, base_uri)
 
+    if is_cef:
+        CEF.load_html(inject_base_uri(content, base_uri), uid)
+        return
+
     window = BrowserView.instances[uid]
     window.load_event.clear()
 
-    if window.web_browser.InvokeRequired:
-        window.web_browser.Invoke(Func[Type](_load_html))
+    if window.InvokeRequired:
+        window.Invoke(Func[Type](_load_html))
     else:
         _load_html()
 
@@ -378,7 +403,9 @@ def toggle_fullscreen(uid):
 def destroy_window(uid):
     window = BrowserView.instances[uid]
     window.Close()
-    window.js_result_semaphore.release()
+
+    if not is_cef:
+        window.js_result_semaphore.release()
 
 
 def evaluate_js(script, uid):
@@ -389,14 +416,12 @@ def evaluate_js(script, uid):
         window.js_result = None if result is None or result is 'null' else json.loads(result)
         window.js_result_semaphore.release()
 
-    window = BrowserView.instances[uid]
-    window.load_event.wait()
-
-    if window.web_browser.InvokeRequired:
-        window.web_browser.Invoke(Func[Type](_evaluate_js))
+    if is_cef:
+        return CEF.evaluate_js(script, uid)
     else:
-        _evaluate_js()
+        window = BrowserView.instances[uid]
+        window.load_event.wait()
+        window.Invoke(Func[Type](_evaluate_js))
+        window.js_result_semaphore.acquire()
 
-    window.js_result_semaphore.acquire()
-
-    return window.js_result
+        return window.js_result
