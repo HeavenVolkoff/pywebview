@@ -14,10 +14,7 @@ import platform
 
 from .js import api, npo
 
-try:
-    from urllib import quote    # python 2.x
-except:
-    from urllib.parse import quote  # python 3.x
+default_html = '<!doctype html><html><head></head><body></body></html>'
 
 blank_html = """
 
@@ -30,15 +27,19 @@ def base_uri(relative_path=''):
         base_path = sys._MEIPASS
     except Exception:
         if 'pytest' in sys.modules:
-            path = os.path.realpath(sys.argv[0] if len(sys.argv) == 1 else sys.argv[1])
-            base_path = path if os.path.isdir(path) else os.path.dirname(path)
+            for arg in reversed(sys.argv):
+                path = os.path.realpath(arg)
+
+                if os.path.exists(path):
+                    base_path = path if os.path.isdir(path) else os.path.dirname(path)
+                    break
         else:
             base_path = os.path.dirname(os.path.realpath(sys.argv[0]))
 
     if not os.path.exists(base_path):
         raise ValueError('Path %s does not exist' % base_path)
 
-    return 'file://%s' % quote(os.path.join(base_path, relative_path))
+    return 'file://%s' % os.path.join(base_path, relative_path)
 
 
 def convert_string(string):

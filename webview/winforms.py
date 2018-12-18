@@ -26,7 +26,7 @@ from System.Threading import Thread, ThreadStart, ApartmentState
 from System.Drawing import Size, Point, Icon, Color, ColorTranslator, SizeF
 
 from webview import OPEN_DIALOG, FOLDER_DIALOG, SAVE_DIALOG, _js_bridge_call, config
-from webview.util import parse_api_js, interop_dll_path, parse_file_type, inject_base_uri
+from webview.util import parse_api_js, interop_dll_path, parse_file_type, inject_base_uri, default_html
 
 from .js import alert
 from .js.css import disable_text_select
@@ -149,8 +149,14 @@ class BrowserView:
             if url:
                 self.web_browser.Navigate(url)
             else:
-                self.web_browser.DocumentText = blank_html
+                self.web_browser.DocumentText = default_html
 
+            self.url = url
+
+            self.Controls.Add(self.web_browser)
+            self.is_fullscreen = False
+            self.Shown += self.on_shown
+            self.FormClosed += self.on_close
             self.Controls.Add(self.web_browser)    
 
         def _initialize_js(self):
@@ -245,6 +251,10 @@ class BrowserView:
                 self.FormBorderStyle = self.old_style
                 self.Location = self.old_location
                 self.is_fullscreen = False
+
+        def set_window_size(self, width, height):
+            windll.user32.SetWindowPos(self.Handle.ToInt32(), None, self.Location.X, self.Location.Y,
+                width, height, 64)
 
 
 def create_window(uid, title, url, width, height, resizable, fullscreen, min_size,
@@ -398,6 +408,11 @@ def load_html(content, base_uri, uid):
 def toggle_fullscreen(uid):
     window = BrowserView.instances[uid]
     window.toggle_fullscreen()
+
+
+def set_window_size(width, height, uid):
+    window = BrowserView.instances[uid]
+    window.set_window_size(width, height)
 
 
 def destroy_window(uid):

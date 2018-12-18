@@ -224,11 +224,15 @@ def create_window(title, url=None, js_api=None, width=800, height=600,
             raise Exception('Call create_window from the main thread first, and then from subthreads')
 
     _webview_ready.clear()  # Make API calls wait while the new window is created
+
     gui.create_window(uid, make_unicode(title), transform_url(url),
                       width, height, resizable, fullscreen, min_size, confirm_quit,
                       background_color, debug, js_api, text_select, _webview_ready)
 
-    return uid
+    if uid == 'master':
+        _webview_ready.clear()
+    else:
+        return uid
 
 
 @_api_call
@@ -318,6 +322,17 @@ def toggle_fullscreen(uid='master'):
     :param uid: uid of the target instance
     """
     gui.toggle_fullscreen(uid)
+
+
+@_api_call
+def set_window_size(width, height, uid='master'):
+    """
+    Set Window Size
+    :param width: desired width of target window
+    :param height: desired height of target window
+    :param uid: uid of the target instance
+    """
+    gui.set_window_size(width, height, uid)
 
 
 @_api_call
