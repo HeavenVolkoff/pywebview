@@ -121,6 +121,7 @@ def _cef_call(func):
 
     return wrapper
 
+
 def init():
     global _initialized
 
@@ -183,11 +184,7 @@ def close_window(uid):
     del instances[uid]
 
 
-
-def shutdown():
-    cef.Shutdown()
-
-atexit.register(shutdown)
+atexit.register(cef.Shutdown)
 
 _initialized = False
 init()

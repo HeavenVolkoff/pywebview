@@ -33,7 +33,6 @@ from .js.css import disable_text_select
 
 from webview.localization import localization
 from webview.win32_shared import set_ie_mode
-from webview.util import blank_html
 
 clr.AddReference(interop_dll_path())
 from WebBrowserInterop import IWebBrowserInterop, WebBrowserEx
